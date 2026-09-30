@@ -1,0 +1,71 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="貯蓄目標"><meta name="robots" content="noindex">
+<title>貯蓄目標</title>
+<style>
+:root{--bg:#f4f5f2;--cd:#fff;--tx:#1d2320;--sb:#68706b;--bd:#dfe3dd;--ac:#1f7a5a;--ac2:#e2f1ea}
+@media(prefers-color-scheme:dark){:root{--bg:#141816;--cd:#1e2421;--tx:#e8ece9;--sb:#96a09a;--bd:#2d3531;--ac:#4cc39a;--ac2:#1f3a30}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.6 -apple-system,"Hiragino Sans",sans-serif;padding:env(safe-area-inset-top) 0 calc(72px + env(safe-area-inset-bottom))}
+main{max-width:520px;margin:0 auto;padding:14px}
+input,button{font:inherit;color:inherit;background:var(--cd);border:1px solid var(--bd);border-radius:8px;height:40px;padding:0 10px}
+input[type=checkbox]{height:auto;width:auto}button{cursor:pointer}
+button.pr{width:100%;height:46px;margin-top:12px;background:var(--ac);border-color:var(--ac);color:#fff;font-weight:500}
+button.on{background:var(--ac2);border-color:var(--ac);color:var(--ac)}
+small,.sb{font-size:12px;color:var(--sb);margin:2px 0 0}.lb{font-size:13px;color:var(--sb);margin:18px 0 8px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.mc{background:var(--cd);border:1px solid var(--bd);border-radius:10px;padding:12px}.mc b{display:block;font-size:26px;font-weight:600}
+.it{background:var(--cd);border:1px solid var(--bd);border-radius:10px;padding:12px;margin:0 0 10px}
+.rt{display:flex;justify-content:space-between;font-size:14px;margin-bottom:6px}
+.tr{position:relative;height:8px;border-radius:4px;background:var(--bd)}.fl{height:8px;border-radius:4px;background:var(--ac)}.mk{position:absolute;top:-3px;width:2px;height:14px;background:var(--tx)}
+.seg{display:flex;gap:8px;margin-bottom:12px}.seg button{flex:1}
+.fr{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 8px;font-size:14px}.fr input{width:150px;text-align:right}
+.gr{border:1px solid var(--bd);border-radius:10px;padding:10px;margin-bottom:8px;background:var(--cd)}.gr input.gn{width:100%;margin-bottom:6px}.g3{display:grid;grid-template-columns:2fr 1fr 1fr;gap:6px}.g3 input{width:100%;text-align:right}
+.bars{display:flex;align-items:flex-end;gap:8px;height:110px;padding-top:18px}.bars div{flex:1;position:relative;background:var(--ac);border-radius:4px 4px 0 0}.bars i{position:absolute;top:-17px;left:0;right:0;text-align:center;font:11px/1 sans-serif;color:var(--sb)}
+.bl{display:flex;gap:8px;font-size:11px;color:var(--sb);text-align:center}.bl span{flex:1}
+nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--cd);border-top:1px solid var(--bd);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;height:54px;border:0;border-radius:0;background:none;font-size:13px;color:var(--sb)}nav button.on{color:var(--ac);background:none}
+#msg{min-height:20px;font-size:13px;margin:6px 0}
+</style></head><body><main>
+<div id="msg"></div>
+<section id="home"></section><section id="inp" hidden></section><section id="his" hidden></section><section id="set" hidden></section>
+</main>
+<nav><button data-t="home" onclick="tab('home')">ホーム</button><button data-t="inp" onclick="tab('inp')">入力</button><button data-t="his" onclick="tab('his')">履歴</button><button data-t="set" onclick="tab('set')">設定</button></nav>
+<script>
+const $=s=>document.querySelector(s),LS=localStorage,T=['親P','親M','子A','子B'];
+let url=LS.sg_url||'',nm=JSON.parse(LS.sg_names||'{}'),D=null,ITEMS=[],who='P',cur='home',LV={},LT='',MS=[];
+const lab=s=>{T.forEach(t=>{if(nm[t])s=s.split(t).join(nm[t])});return s};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const L=s=>esc(lab(s)),yen=n=>Math.round(n).toLocaleString('ja-JP'),man=n=>Math.round(n/1e4).toLocaleString('ja-JP')+'万';
+const msg=(t,e)=>{const m=$('#msg');m.textContent=t;m.style.color=e?'#c0392b':''};
+async function api(b){if(!url)throw new Error('設定タブで接続URLを入力してください');
+const r=b?await fetch(url,{method:'POST',body:JSON.stringify(b)}):await fetch(url+(url.includes('?')?'&':'?')+'action=data');
+const j=await r.json();if(j.error)throw new Error(j.error);return j}
+async function load(){try{msg('読み込み中…');D=await api();ITEMS=D.items;calc();tab(cur);msg('')}catch(e){msg(e.message,1)}}
+function calc(){const ok=new Set(ITEMS.filter(i=>i.show).map(i=>i.id)),st={};MS=[];let pm='';
+const snap=k=>{let t=0;for(const x in st)if(ok.has(x.split('|')[1]))t+=st[x];MS.push([k,t])};
+const rows=D.bal.slice().sort((a,b)=>a[0]<b[0]?-1:1);
+rows.forEach(r=>{const k=String(r[0]).slice(0,7);if(pm&&k!==pm)snap(pm);pm=k;st[r[1]+'|'+r[2]]=+r[3]});
+if(pm)snap(pm);LV=st;LT=rows.length?String(rows[rows.length-1][0]).slice(0,10):''}
+const tgt=i=>{const d=i.end-i.start+1,e=(Date.now()-new Date(i.start,0,1))/31557600000;return i.goal*Math.min(1,Math.max(0,e/d))};
+function home(){if(!D){$('#home').innerHTML='<p class=sb>設定タブで接続URLを入力してください。</p>';return}
+const v=ITEMS.filter(i=>i.show),y=new Date().getFullYear();let s=0,g=0,m=0;
+const h=v.map(i=>{const p=LV['P|'+i.id]||0,q=LV['M|'+i.id]||0,c=p+q;s+=c;g+=i.goal;if(y>=i.start&&y<=i.end)m+=i.goal/((i.end-i.start+1)*12);
+return `<div class=it><div class=rt><span>${L(i.name)}</span><span>${man(c)} / ${man(i.goal)}</span></div><div class=tr><div class=fl style="width:${Math.min(100,c/i.goal*100)}%"></div><div class=mk style="left:${tgt(i)/i.goal*100}%"></div></div><p class=sb>${L('親P')} ${man(p)} / ${L('親M')} ${man(q)}</p></div>`}).join('');
+$('#home').innerHTML=`<div class=g2><div class=mc><small>全体の達成率</small><b>${g?Math.round(s/g*100):0}%</b></div><div class=mc><small>今月の目標額</small><b>${man(m)}</b></div></div><p class=lb>項目別（縦線は今の目標累計）${LT?'　最終更新 '+esc(LT):''}</p>${h||'<p class=sb>項目がありません。</p>'}`}
+function inp(){const v=ITEMS.filter(i=>i.show);
+$('#inp').innerHTML=`<div class=seg><button class="${who=='P'?'on':''}" onclick="who='P';inp()">${L('親P')}</button><button class="${who=='M'?'on':''}" onclick="who='M';inp()">${L('親M')}</button></div><div class=fr><span>日付</span><input id=dt type=date value="${new Date().toLocaleDateString('sv-SE')}"></div>${v.map(i=>`<div class=fr><span>${L(i.name)}</span><input data-id="${esc(i.id)}" inputmode=numeric placeholder="前回 ${yen(LV[who+'|'+i.id]||0)}"></div>`).join('')}<div class=fr><span>PIN</span><input id=pin type=password inputmode=numeric style="width:100px"></div><button class=pr onclick=saveBal()>保存</button>`}
+async function saveBal(){const values={};document.querySelectorAll('#inp [data-id]').forEach(e=>{const n=e.value.replace(/[,\s]/g,'');if(n!==''&&!isNaN(n))values[e.dataset.id]=+n});
+if(!Object.keys(values).length)return msg('残高を入力してください',1);
+try{msg('保存中…');await api({action:'balance',who,pin:$('#pin').value,date:$('#dt').value,values});cur='home';await load();msg('保存しました')}catch(e){msg(e.message,1)}}
+function his(){if(!D){$('#his').innerHTML='';return}const b=MS.slice(-6),mx=Math.max(1,...b.map(x=>x[1])),seen=new Set(),rc=[];
+D.bal.slice().reverse().forEach(r=>{const k=r[0]+r[1];if(!seen.has(k)){seen.add(k);rc.push(r)}});
+$('#his').innerHTML=`<p class=lb>合計残高の月別推移（万円）</p><div class=bars>${b.map(x=>`<div style="height:${x[1]/mx*100}%"><i>${Math.round(x[1]/1e4)}</i></div>`).join('')}</div><div class=bl>${b.map(x=>`<span>${x[0].slice(5)}月</span>`).join('')}</div><p class=lb>最近の更新</p>${rc.slice(0,8).map(r=>`<p class=sb>${esc(String(r[0]).slice(0,10))}　${L(r[1]=='P'?'親P':'親M')}が更新</p>`).join('')||'<p class=sb>まだ入力がありません。</p>'}`}
+const row=i=>`<div class=gr data-id="${esc(i.id)}"><input class=gn value="${esc(i.name)}"><div class=g3><input class=gg inputmode=numeric value="${i.goal}"><input class=gs inputmode=numeric value="${i.start}"><input class=ge inputmode=numeric value="${i.end}"></div><label class=sb><input type=checkbox class=gv ${i.show?'checked':''}> 表示（左から 目標額／開始年／終了年）</label></div>`;
+function set(){$('#set').innerHTML=`<p class=lb style="margin-top:0">この端末だけに保存されます</p><input id=su style="width:100%" value="${esc(url)}" placeholder="接続URL（https://script.google.com/…/exec）">${T.map(t=>`<div class=fr style="margin-top:8px"><span>${t}の表示名</span><input data-n="${t}" value="${esc(nm[t]||'')}"></div>`).join('')}<button class=pr onclick=saveSet()>端末に保存</button><p class=lb style="margin-top:28px">目標設定（親Pのみ）</p><div id=gl>${ITEMS.map(row).join('')}</div><button onclick="addRow()">項目を追加</button><div class=fr style="margin-top:12px"><span>親PのPIN</span><input id=gp type=password inputmode=numeric style="width:100px"></div><button class=pr onclick=saveGoal()>目標を保存</button>`}
+function addRow(){const y=new Date().getFullYear();$('#gl').insertAdjacentHTML('beforeend',row({id:'i'+Date.now(),name:'新しい項目',goal:1000000,start:y,end:y+10,show:true}))}
+function saveSet(){url=$('#su').value.trim();nm={};document.querySelectorAll('[data-n]').forEach(e=>{if(e.value.trim())nm[e.dataset.n]=e.value.trim()});LS.sg_url=url;LS.sg_names=JSON.stringify(nm);cur='home';load()}
+async function saveGoal(){const items=[...document.querySelectorAll('.gr')].map(e=>({id:e.dataset.id,name:e.querySelector('.gn').value.trim(),goal:+e.querySelector('.gg').value.replace(/,/g,''),start:+e.querySelector('.gs').value,end:+e.querySelector('.ge').value,show:e.querySelector('.gv').checked}));
+if(items.some(i=>!i.name||!(i.goal>0)||!(i.end>=i.start)))return msg('項目名・目標額・年を確認してください',1);
+try{msg('保存中…');await api({action:'items',pin:$('#gp').value,items});cur='set';await load();msg('目標を保存しました')}catch(e){msg(e.message,1)}}
+function tab(n){cur=n;['home','inp','his','set'].forEach(k=>$('#'+k).hidden=k!=n);document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t==n));({home,inp,his,set})[n]()}
+tab(url?'home':'set');if(url)load();
+</script></body></html>
