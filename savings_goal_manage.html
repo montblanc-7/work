@@ -53,6 +53,7 @@ const sch=i=>{const n=(i.end-i.start+1)*12,gap=Math.max(0,i.goal-(i.base||0)-(i.
 const tgt=i=>{const {n,mo}=sch(i),d=new Date(),B=new Date(BASE),oy=i.start>B.getFullYear()?i.start:B.getFullYear(),om=i.start>B.getFullYear()?0:B.getMonth(),od=i.start>B.getFullYear()?1:B.getDate(),
 el=Math.min(n,Math.max(0,(d.getFullYear()-oy)*12+d.getMonth()-om-(d.getDate()<od?1:0)));
 return mo*el+(i.pa&&i.py&&d.getFullYear()>=i.py?i.pa:0)};
+const stat=(d,mo)=>{const k=mo>0?d/mo:0,t=Math.abs(d)<mo*0.5?'ほぼ目標ペース':d>0?`目標より約${k.toFixed(1)}か月分 先行`:`目標より約${(-k).toFixed(1)}か月分 遅れ`;return `<p class=sb style="margin:8px 0 0;color:${d>=0?'var(--ac)':'#c0392b'}">${t}</p>`};
 const nums=(c,a,t)=>{const d=a-t;return `<div class=nums><span>残高<b>¥${yen(c)}</b></span><span>積立実績<b>¥${yen(a)}</b></span><span>目標累計<b>¥${yen(t)}</b></span><span>差額<b class="${d>=0?'up':'dn'}">${d>=0?'+':'−'}¥${yen(Math.abs(d))}</b></span></div>`};
 function home(){if(!D){$('#home').innerHTML='<p class=sb>設定タブで接続URLを入力してください。</p>';return}
 const v=ITEMS.filter(i=>i.show),y=new Date().getFullYear();let s=0,g=0,m=0,tt=0,bb=0;
