@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>レビュー下書きヘルパー</title>
+<style>
+:root{--bg:#f6f5f1;--fg:#1d2326;--mut:#667177;--card:#fff;--line:#dcdad2;--ac:#0d6b63;--acfg:#fff;color-scheme:light dark}
+@media(prefers-color-scheme:dark){:root{--bg:#14181a;--fg:#e8ecec;--mut:#8d989c;--card:#1d2326;--line:#2d3538;--ac:#3fb5aa;--acfg:#06201d}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,"Hiragino Sans",sans-serif;padding:env(safe-area-inset-top) 0 calc(88px + env(safe-area-inset-bottom))}
+header,main{max-width:680px;margin:0 auto;padding:0 14px}
+h1{font-size:20px;margin:16px 0 4px}
+.sub{color:var(--mut);font-size:13px;margin:0 0 12px}
+button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:10px;padding:9px 14px;cursor:pointer}
+button.p{background:var(--ac);color:var(--acfg);border-color:var(--ac);font-weight:600}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
+input[type=search]{flex:1;min-width:140px;font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.item{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0}
+.item.done{opacity:.55}
+.name{font-size:15px;font-weight:600;margin:0 0 2px;word-break:break-all}
+.meta{font-size:12px;color:var(--mut);display:flex;gap:12px;flex-wrap:wrap}
+.meta a{color:var(--ac)}
+.row{display:flex;gap:14px;margin:8px 0 6px;font-size:14px}
+.row label{display:flex;align-items:center;gap:6px}
+input[type=checkbox]{width:20px;height:20px;accent-color:var(--ac)}
+textarea{width:100%;font:inherit;font-size:15px;min-height:56px;padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg);resize:vertical}
+.foot{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;gap:10px;justify-content:center;align-items:center}
+.foot button{flex:1;max-width:420px}
+.empty{text-align:center;color:var(--mut);padding:32px 8px}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:100px;background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:20px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.on{opacity:1}
+</style>
+</head>
+<body>
+<header>
+<h1>レビュー下書きヘルパー</h1>
+<p class="sub">購入履歴CSVを読み込み、一言メモからAI用プロンプトを作ります。投稿は手動です。</p>
+<div class="bar">
+<label class="btn">CSVを選ぶ<input id="file" type="file" accept=".csv,text/csv" hidden></label>
+<input id="q" type="search" placeholder="商品名で絞り込み">
+</div>
+<div class="bar">
+<label style="display:flex;gap:6px;align-items:center"><input id="only" type="checkbox" checked>未レビューのみ</label>
+<span id="cnt" class="sub" style="margin:0"></span>
+<button id="exp" style="font-size:13px">書き出し</button>
+<label class="btn" style="font-size:13px">読み込み<input id="imp" type="file" accept=".json,application/json" hidden></label>
+<button id="reset" style="margin-left:auto;font-size:13px">全消去</button>
+</div>
+</header>
+<main id="list"></main>
+<div class="foot"><button id="gen" class="p">選択した商品のプロンプトをコピー</button></div>
+<div id="toast"></div>
+<script>
+const KEY="reviewHelperV1";
+let S={items:[]};
+try{S=JSON.parse(localStorage.getItem(KEY))||S}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}};
+const $=id=>document.getElementById(id);
+const toast=t=>{const e=$("toast");e.textContent=t;e.classList.add("on");setTimeout(()=>e.classList.remove("on"),1800)};
+
+function parseCSV(t){
+  const r=[];let row=[],f="",q=false;
+  if(t.charCodeAt(0)===0xFEFF)t=t.slice(1);
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(q){if(c==='"'){if(t[i+1]==='"'){f+='"';i++}else q=false}else f+=c}
+    else if(c==='"')q=true;
+    else if(c===','){row.push(f);f=""}
+    else if(c==='\n'){row.push(f);r.push(row);row=[];f=""}
+    else if(c!=='\r')f+=c}
+  if(f||row.length){row.push(f);r.push(row)}
+  return r;
+}
+function col(h,names){return h.findIndex(x=>names.some(n=>x.trim().toLowerCase().includes(n)))}
+function importCSV(text){
+  const rows=parseCSV(text);if(rows.length<2)return toast("データがありません");
+  const h=rows[0];
+  const ip=col(h,["product name","商品名"]),ia=col(h,["asin"]),id=col(h,["order date","注文日"]);
+  if(ip<0)return toast("「Product Name」列が見つかりません");
+  const map=new Map(S.items.map(x=>[x.key,x]));
+  let add=0;
+  for(const r of rows.slice(1)){
+    const name=(r[ip]||"").trim();if(!name||name==="Not Available")continue;
+    const asin=ia>=0?(r[ia]||"").trim():"";
+    const date=id>=0?(r[id]||"").slice(0,10):"";
+    const key=asin||name;
+    const ex=map.get(key);
+    if(ex){if(date>ex.date)ex.date=date;continue}
+    const it={key,name,asin,date,done:false,memo:""};
+    map.set(key,it);add++;
+  }
+  S.items=[...map.values()].sort((a,b)=>b.date.localeCompare(a.date));
+  save();render();toast(add+"件を追加しました");
+}
+$("file").onchange=e=>{const f=e.target.files[0];if(!f)return;
+  const rd=new FileReader();rd.onload=()=>importCSV(rd.result);rd.readAsText(f,"utf-8");e.target.value=""};
+
+const sel=new Set();
+function esc(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function render(){
+  const q=$("q").value.trim().toLowerCase(),only=$("only").checked;
+  const list=S.items.filter(x=>(!only||!x.done)&&(!q||x.name.toLowerCase().includes(q)));
+  $("cnt").textContent=list.length+"件 / 全"+S.items.length+"件";
+  if(!S.items.length){$("list").innerHTML='<div class="empty">CSVを読み込むと一覧が表示されます。<br>Amazonの「データのリクエスト」で入手した Retail.OrderHistory の CSV を選んでください。</div>';return}
+  $("list").innerHTML=list.map(x=>{
+    const i=S.items.indexOf(x);
+    const links=x.asin?`<a href="https://www.amazon.co.jp/dp/${x.asin}" target="_blank" rel="noopener">商品ページ</a><a href="https://www.amazon.co.jp/review/create-review?asin=${x.asin}" target="_blank" rel="noopener">レビューを書く</a>`:"";
+    return `<div class="item ${x.done?"done":""}"><p class="name">${esc(x.name)}</p>
+<div class="meta"><span>${x.date}</span>${links}</div>
+<div class="row"><label><input type="checkbox" data-s="${i}" ${sel.has(x.key)?"checked":""}>プロンプトに含める</label><label><input type="checkbox" data-d="${i}" ${x.done?"checked":""}>レビュー済み</label></div>
+<textarea data-m="${i}" placeholder="一言メモ（使った場面・期間・良かった点・気になった点）">${esc(x.memo)}</textarea></div>`}).join("")||'<div class="empty">該当する商品がありません</div>';
+}
+$("list").addEventListener("input",e=>{const m=e.target.dataset.m;if(m!==undefined){S.items[m].memo=e.target.value;S.items[m].u=Date.now();save()}});
+$("list").addEventListener("change",e=>{const t=e.target.dataset;
+  if(t.s!==undefined){const k=S.items[t.s].key;e.target.checked?sel.add(k):sel.delete(k)}
+  if(t.d!==undefined){S.items[t.d].done=e.target.checked;S.items[t.d].u=Date.now();save();render()}});
+$("q").oninput=render;$("only").onchange=render;
+$("reset").onclick=()=>{if(confirm("読み込んだデータとメモをすべて消します。よろしいですか？")){S={items:[]};sel.clear();save();render()}};
+
+const RULES=`あなたはAmazonレビューの下書き作成者です。以下の商品ごとに、日本語でレビューを作成してください。
+
+【目的】Amazon Vine先取りプログラムに招待されるよう、他の購入者の判断に役立つ、誠実で具体的なレビューにする。
+
+【ルール】
+- 事実は私のメモにある内容のみ使う。メモにない性能・体験・数値は書かない。情報が足りない箇所は「[要確認:○○]」と入れる。
+- 構成：使った場面と期間 → 良かった点（具体的に）→ 気になった点・向かない人 → 総評（どんな人におすすめか）。
+- 良い点と気になる点の両方を必ず入れる。誇張・過度な称賛・定型句・絵文字は使わない。
+- 本文は250〜500字。タイトルは30字以内で内容が分かるもの。
+- 星(1〜5)はメモのトーンから判断し、理由を1行添える。
+- 写真・動画を付けるとよい場合は、撮るべき内容を1行で提案する。
+
+【出力形式（商品ごと）】
+商品名：
+星：
+タイトル：
+本文：
+補足（星の理由・撮影提案）：
+
+【商品とメモ】
+`;
+$("gen").onclick=async()=>{
+  const picked=S.items.filter(x=>sel.has(x.key));
+  if(!picked.length)return toast("商品を選択してください");
+  const body=picked.map((x,i)=>`${i+1}. ${x.name}\nメモ：${x.memo.trim()||"（メモなし）"}`).join("\n\n");
+  const text=RULES+body;
+  try{await navigator.clipboard.writeText(text);toast("コピーしました。AIに貼り付けてください")}
+  catch(e){const ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();
+    try{document.execCommand("copy");toast("コピーしました")}catch(_){toast("コピーに失敗しました")}ta.remove()}
+};
+$("exp").onclick=async()=>{
+  const blob=new Blob([JSON.stringify({v:1,items:S.items})],{type:"application/json"});
+  const file=new File([blob],"review-data.json",{type:"application/json"});
+  const ios=/iPhone|iPad/.test(navigator.userAgent);
+  if(ios&&navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file]});return}catch(e){if(e.name==="AbortError")return}
+  }
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="review-data.json";
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  toast("書き出しました");
+};
+$("imp").onchange=e=>{const f=e.target.files[0];if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const d=JSON.parse(rd.result);if(!Array.isArray(d.items))throw 0;
+      const map=new Map(S.items.map(x=>[x.key,x]));let add=0,upd=0;
+      for(const n of d.items){
+        if(!n||!n.key)continue;
+        const o=map.get(n.key);
+        if(!o){map.set(n.key,n);add++;continue}
+        if((n.date||"")>o.date)o.date=n.date;
+        if((n.u||0)>(o.u||0)){o.done=n.done;o.memo=n.memo;o.u=n.u;upd++}
+      }
+      S.items=[...map.values()].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+      save();render();toast("読み込み完了（追加"+add+"・更新"+upd+"）");
+    }catch(_){toast("読み込めないファイルです")}
+  };
+  rd.readAsText(f,"utf-8");e.target.value="";
+};
+render();
+</script>
+</body>
+</html>
