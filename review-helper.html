@@ -14,6 +14,8 @@ header,main{max-width:680px;margin:0 auto;padding:0 14px}
 h1{font-size:20px;margin:16px 0 4px}
 .sub{color:var(--mut);font-size:13px;margin:0 0 12px}
 button,.btn{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:10px;padding:9px 14px;cursor:pointer}
+select{font:inherit;font-size:14px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+button:disabled{opacity:.4}
 button.p{background:var(--ac);color:var(--acfg);border-color:var(--ac);font-weight:600}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
 input[type=search]{flex:1;min-width:140px;font:inherit;padding:9px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
@@ -42,6 +44,8 @@ textarea{width:100%;font:inherit;font-size:15px;min-height:56px;padding:8px 10px
 <input id="q" type="search" placeholder="商品名で絞り込み">
 </div>
 <div class="bar">
+<select id="year"></select>
+<select id="size"><option value="20">20件</option><option value="50">50件</option><option value="100">100件</option></select>
 <label style="display:flex;gap:6px;align-items:center"><input id="only" type="checkbox" checked>未レビューのみ</label>
 <span id="cnt" class="sub" style="margin:0"></span>
 <button id="exp" style="font-size:13px">書き出し</button>
@@ -49,7 +53,7 @@ textarea{width:100%;font:inherit;font-size:15px;min-height:56px;padding:8px 10px
 <button id="reset" style="margin-left:auto;font-size:13px">全消去</button>
 </div>
 </header>
-<main id="list"></main>
+<main><div class="bar pg" style="justify-content:center"></div><div id="list"></div><div class="bar pg" style="justify-content:center"></div></main>
 <div class="foot"><button id="gen" class="p">選択した商品のプロンプトをコピー</button></div>
 <div id="toast"></div>
 <script>
@@ -96,14 +100,22 @@ function importCSV(text){
 $("file").onchange=e=>{const f=e.target.files[0];if(!f)return;
   const rd=new FileReader();rd.onload=()=>importCSV(rd.result);rd.readAsText(f,"utf-8");e.target.value=""};
 
-const sel=new Set();
+const sel=new Set();let page=0;
 function esc(s){return s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 function render(){
   const q=$("q").value.trim().toLowerCase(),only=$("only").checked;
-  const list=S.items.filter(x=>(!only||!x.done)&&(!q||x.name.toLowerCase().includes(q)));
+  const yrs=[...new Set(S.items.map(x=>(x.date||"").slice(0,4)).filter(Boolean))].sort().reverse();
+  const yv=yrs.includes(S.year)?S.year:"";
+  $("year").innerHTML='<option value="">全期間</option>'+yrs.map(y=>`<option value="${y}">${y}年</option>`).join("");
+  $("year").value=yv;$("size").value=String(S.size||50);
+  const list=S.items.filter(x=>(!only||!x.done)&&(!yv||(x.date||"").startsWith(yv))&&(!q||x.name.toLowerCase().includes(q)));
+  const size=+S.size||50,pages=Math.max(1,Math.ceil(list.length/size));
+  page=Math.min(page,pages-1);
+  const view=list.slice(page*size,(page+1)*size);
+  document.querySelectorAll(".pg").forEach(p=>{p.innerHTML=pages>1?`<button data-p="-1" ${page<1?"disabled":""}>前へ</button><span>${page+1} / ${pages}</span><button data-p="1" ${page>=pages-1?"disabled":""}>次へ</button>`:""});
   $("cnt").textContent=list.length+"件 / 全"+S.items.length+"件";
   if(!S.items.length){$("list").innerHTML='<div class="empty">CSVを読み込むと一覧が表示されます。<br>Amazonの「データのリクエスト」で入手した Retail.OrderHistory の CSV を選んでください。</div>';return}
-  $("list").innerHTML=list.map(x=>{
+  $("list").innerHTML=view.map(x=>{
     const i=S.items.indexOf(x);
     const links=x.asin?`<a href="https://www.amazon.co.jp/dp/${x.asin}" target="_blank" rel="noopener">商品ページ</a><a href="https://www.amazon.co.jp/review/create-review?asin=${x.asin}" target="_blank" rel="noopener">レビューを書く</a>`:"";
     return `<div class="item ${x.done?"done":""}"><p class="name">${esc(x.name)}</p>
@@ -115,7 +127,12 @@ $("list").addEventListener("input",e=>{const m=e.target.dataset.m;if(m!==undefin
 $("list").addEventListener("change",e=>{const t=e.target.dataset;
   if(t.s!==undefined){const k=S.items[t.s].key;e.target.checked?sel.add(k):sel.delete(k)}
   if(t.d!==undefined){S.items[t.d].done=e.target.checked;S.items[t.d].u=Date.now();save();render()}});
-$("q").oninput=render;$("only").onchange=render;
+const back=()=>{page=0;render()};
+$("q").oninput=back;$("only").onchange=back;
+$("year").onchange=()=>{S.year=$("year").value;save();back()};
+$("size").onchange=()=>{S.size=+$("size").value;save();back()};
+document.addEventListener("click",e=>{const b=e.target.closest(".pg button");if(!b)return;
+  page+=+b.dataset.p;render();window.scrollTo({top:0})});
 $("reset").onclick=()=>{if(confirm("読み込んだデータとメモをすべて消します。よろしいですか？")){S={items:[]};sel.clear();save();render()}};
 
 const RULES=`あなたはAmazonレビューの下書き作成者です。以下の商品ごとに、日本語でレビューを作成してください。
